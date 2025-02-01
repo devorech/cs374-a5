@@ -28,24 +28,24 @@ void setupAddressStruct(struct sockaddr_in* address,
     address->sin_addr.s_addr = INADDR_ANY;
 }
 
-// Encrypt the string that is passed in according to the key
+// decrypt the string that is passed in according to the key
 // Key should be at least equal or longer in length than plaintext
-char* encrypt(char* plaintext, char* key)
+char* decrypt(char* ciphertext, char* key)
 {
-    size_t pt_len = strlen(plaintext);
-    char* ciphertext = calloc(pt_len, sizeof(char));
-    for (int i = 0; i < pt_len; i++)
+    size_t ct_len = strlen(ciphertext);
+    char* plaintext = calloc(ct_len, sizeof(char));
+    for (int i = 0; i < ct_len; i++)
     {
         // Get the corresponding "value" that will be converted to the encrypted character
         // A-Z = 0 - 25, <space> = 26
-        int pt_val;
-        if (plaintext[i] == ' ')
+        int ct_val;
+        if (ciphertext[i] == ' ')
         {
-            pt_val = 26; // 26 = space (' ')
+            ct_val = 26; // 26 = space (' ')
         }
         else
         {
-            pt_val = plaintext[i] - 'A';
+            ct_val = ciphertext[i] - 'A';
         }
         // Check if the key has a space to handle it correctly
         int k_val;
@@ -57,23 +57,20 @@ char* encrypt(char* plaintext, char* key)
         {
             k_val = key[i] - 'A';
         }
-        // Result = resulting character (A-Z or ' ') after encryption
-        int result = (pt_val + k_val) % 27;
+        // Now we should have the correct numbers
+        int result = ((ct_val - k_val + 27) % 27);
         if (result == 26)
         {
-            ciphertext[i] = ' ';
+            plaintext[i] = ' ';
         }
         else
         {
-            ciphertext[i] = result + 'A';
+            plaintext[i] = result + 'A';
         }
     }
-    return ciphertext;
+    return plaintext;
 }
 
-/*
-* Main program that handles socket and reading/writing to socket(s) with client(s)
-*/
 int main(int argc, char *argv[]){
     int connectionSocket, charsRead;
     char buffer[100000];
@@ -90,7 +87,7 @@ int main(int argc, char *argv[]){
     // Create the socket that will listen for connections
     int listenSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (listenSocket < 0) {
-        error("ENC_SERVER: ERROR opening socket");
+        error("DEC_SERVER: ERROR opening socket");
     }
 
     // Set up the address struct for the server socket
@@ -98,7 +95,7 @@ int main(int argc, char *argv[]){
 
     // Associate the socket to the port
     if (bind(listenSocket, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0){
-        error("ENC_SERVER: ERROR on binding");
+        error("DEC_SERVER: ERROR on binding");
     }
 
     // Start listening for connetions. Allow up to 5 connections to queue up
@@ -113,7 +110,7 @@ int main(int argc, char *argv[]){
                     (struct sockaddr *)&clientAddress, 
                     &sizeOfClientInfo); 
         if (connectionSocket < 0) {
-            fprintf(stderr, "ENC_SERVER: ERROR on accept");
+            fprintf(stderr, "DEC_SERVER: ERROR on accept");
             close(connectionSocket);
             continue;
         }
@@ -121,7 +118,7 @@ int main(int argc, char *argv[]){
         pid_t spawn_pid = fork();
         if (spawn_pid == -1) {
             // Error: Can't fork
-            fprintf(stderr, "ENC_SERVER: fork() failed for this connection!");
+            fprintf(stderr, "DEC_SERVER: fork() failed for this connection!");
             close(connectionSocket);
             continue;
         }
@@ -129,15 +126,15 @@ int main(int argc, char *argv[]){
         {
             /* Child */
 
-            // Verify that the connection came from enc_client
-            // Only proceed if enc_client is trying to connect (exit if it is any other client)
+            // Verify that the connection came from dec_client
+            // Only proceed if dec_client is trying to connect (exit if it is any other client)
             char clientName[11];
             memset(clientName, '\0', sizeof(clientName));
             charsRead = recv(connectionSocket, clientName, sizeof(clientName), 0);
             clientName[strcspn(clientName, "|")] = '\0';
-            if (strcmp(clientName, "enc_client") != 0)
+            if (strcmp(clientName, "dec_client") != 0)
             {
-                fprintf(stderr, "ENC_SERVER: ERROR verifying client (must be \"enc_client\")\n");
+                fprintf(stderr, "DEC_SERVER: ERROR verifying client (must be \"dec_client\")\n");
                 close(connectionSocket);
                 exit(1);
             }
@@ -150,7 +147,7 @@ int main(int argc, char *argv[]){
                 memset(tempBuff, '\0', sizeof(tempBuff));
                 charsRead = recv(connectionSocket, tempBuff, sizeof(tempBuff) - 1, 0);
                 if (charsRead < 0){
-                    perror("ENC_SERVER: ERROR reading from socket");
+                    perror("ERROR reading from socket");
                     close(connectionSocket);
                     exit(1);
                 }
@@ -173,7 +170,7 @@ int main(int argc, char *argv[]){
                 memset(tempBuff, '\0', sizeof(tempBuff));
                 charsRead = recv(connectionSocket, tempBuff, sizeof(tempBuff) - 1, 0);
                 if (charsRead < 0){
-                    perror("ENC_SERVER: ERROR reading from socket");
+                    perror("DEC_SERVER: ERROR reading from socket");
                     close(connectionSocket);
                     exit(1);
                 }
@@ -187,19 +184,19 @@ int main(int argc, char *argv[]){
             // Remove the terminating '|'
             key[strcspn(key, "|")] = '\0';
 
-            // Encrypt the message
-            char* encrypted_message = encrypt(buffer, key);
+            // Decrypt the message
+            char* decrypted_message = decrypt(buffer, key);
             
             // Send a Success message back to the client
             charsRead = send(connectionSocket, 
-                            encrypted_message, strlen(encrypted_message), 0); 
+                            decrypted_message, strlen(decrypted_message), 0); 
             if (charsRead < 0){
-                perror("ENC_SERVER: ERROR writing to socket");
+                perror("ERROR writing to socket");
                 close(connectionSocket);
                 exit(1);
             }
-            // Close the connection socket and free the encrypted message for this client
-            free(encrypted_message);
+            // Close the connection socket and free the decrypted message for this client
+            free(decrypted_message);
 
             close(connectionSocket);
             exit(0);
